@@ -58,9 +58,9 @@ impl Throttle {
 
 fn main() 
 {
-    dotenv().ok();
-    let database_url = env::var("DB").expect("DB (database url) must be set");
+    dotenv().expect("Please setup the .env file");
 
+    let database_url = env::var("DB").expect("DB (database url) must be set");
     let listener = TcpListener::bind("127.0.0.1:7878").unwrap();
     let throttle_map = Arc::new(Mutex::new(HashMap::new()));
 
