@@ -72,6 +72,8 @@ fn main()
         let database_url = database_url.clone(); // Clone the database_url for each thread
 
         std::thread::spawn(move || {
+            eprintln!("spinning a thread!");
+
             let peer_addr = stream.peer_addr().unwrap().ip();
             let mut throttle_map = throttle_map.lock().unwrap();
             let throttle = throttle_map.entry(peer_addr).or_insert_with(Throttle::new);
