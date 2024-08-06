@@ -136,11 +136,43 @@ fn handle_connection(mut stream: TcpStream, database_url: &str)
         token = auth_header.trim_start_matches("Bearer ");
     }
 
+    let limit = match request_line.split_whitespace().nth(1) {
+        Some(path_and_query) => {
+            if let Some(pos) = path_and_query.find('?') {
+                let query = &path_and_query[pos + 1..];
+                let query_params: HashMap<_, _> = query.split('&')
+                    .filter_map(|pair| {
+                        let mut iter = pair.split('=');
+                        if let (Some(key), Some(value)) = (iter.next(), iter.next()) {
+                            Some((key, value))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+    
+                match query_params.get("limit") {
+                    Some(limit) => match limit.parse::<i64>() {
+                        Ok(value) => value,
+                        Err(_) => {
+                            eprintln!("Invalid limit value, using default of 15");
+                            15
+                        }
+                    },
+                    None => 15,
+                }
+            } else {
+                15
+            }
+        }
+        None => 15,
+    };
+
     let pool = Pool::new(database_url).unwrap();
     let mut conn = pool.get_conn().unwrap();
 
-    if request_line == "GET /players/top HTTP/1.1" {
-        match fetch_top_players(&mut conn,token) {
+    if request_line.starts_with("GET /players/top") {
+        match fetch_top_players(&mut conn,token,&limit) {
             Ok(players) => send_players_response(&mut stream, "HTTP/1.1 200 OK", players),
             Err(e) => eprintln!("Error fetching players: {}", e),
         }
@@ -167,12 +199,15 @@ fn handle_connection(mut stream: TcpStream, database_url: &str)
     };
 }
 
-fn fetch_top_players(conn: &mut PooledConn, token: &str) -> std::result::Result<Vec<Player>, mysql::Error> 
+fn fetch_top_players(conn: &mut PooledConn, token: &str, limit: &i64) -> std::result::Result<Vec<Player>, mysql::Error> 
 {
     match check_token(conn, token)? {
         true => {
-            conn.query_map(
-                "SELECT id, `username`, score FROM top_players",
+            conn.exec_map(
+                "SELECT id, `username`, score FROM top_players LIMIT :limit",
+                params! {
+                    "limit" => limit,
+                },
                 |(id, username, score)| {
                     Player { id, username, score }
                 }
@@ -186,8 +221,6 @@ fn fetch_top_players(conn: &mut PooledConn, token: &str) -> std::result::Result<
             }))        
         }
     }
-
-
 }
 
 fn insert_player(conn: &mut PooledConn, username: &str, score: i64, token: &str) -> std::result::Result<Player, mysql::Error> {
